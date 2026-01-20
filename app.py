@@ -1,6 +1,6 @@
 import streamlit as st
-import fitz
-from matcher import predict_fit, explain_match, similarity_score
+import fitz  # PyMuPDF for PDF reading
+from matcher import predict_fit, explain_match, similarity_score, skill_coverage, final_fit_label
 
 st.set_page_config(page_title="SkillMatch AI", layout="wide")
 
@@ -35,17 +35,24 @@ if resume_file and job_description:
 
     if st.button("🚀 Analyze Match"):
         with st.spinner("Analyzing resume..."):
-            label, probs = predict_fit(resume_text, job_description)
+            label_raw, probs = predict_fit(resume_text, job_description)
             explanation = explain_match(resume_text, job_description)
             sim_score = similarity_score(resume_text, job_description)
+
+            matched_skills = explanation["matched_skills"]
+            job_skills = set(matched_skills).union(set(explanation["missing_skills"]))
+            coverage = skill_coverage(matched_skills, job_skills)
+
+            label_final = final_fit_label(label_raw, matched_skills, job_skills)
 
         # -----------------------------
         # MATCH RESULT
         # -----------------------------
         st.markdown("## 📊 Match Result")
-        st.markdown(f"### {label}")
+        st.markdown(f"### {label_final}")
         st.progress(int(sim_score * 100))
         st.caption(f"Semantic Similarity Score: {sim_score:.2f}")
+        st.metric("Skill Coverage", f"{coverage * 100:.1f}%")
 
         # -----------------------------
         # CONFIDENCE (STATIC)
@@ -70,16 +77,17 @@ if resume_file and job_description:
 
         with col1:
             st.markdown("### ✅ Matching Skills")
-            if explanation["matched_skills"]:
-                for skill in explanation["matched_skills"]:
+            if matched_skills:
+                for skill in matched_skills:
                     st.success(skill.title())
             else:
                 st.info("No strong overlaps detected.")
 
         with col2:
             st.markdown("### ❌ Missing Skills")
-            if explanation["missing_skills"]:
-                for skill in explanation["missing_skills"]:
+            missing_skills = explanation["missing_skills"]
+            if missing_skills:
+                for skill in missing_skills:
                     st.warning(skill.title())
             else:
                 st.info("No major gaps detected.")
@@ -92,4 +100,12 @@ if resume_file and job_description:
             • Resume and job description are embedded using BERT  
             • A trained ML classifier predicts fit category  
             • Skill overlap provides explainability  
+            • Final fit combines semantic prediction and explicit skill coverage  
             """)
+
+elif not resume_file and not job_description:
+    st.info("Please upload a resume and enter a job description to get started.")
+elif not resume_file:
+    st.info("Please upload a resume PDF file.")
+elif not job_description:
+    st.info("Please enter the job description text.")
